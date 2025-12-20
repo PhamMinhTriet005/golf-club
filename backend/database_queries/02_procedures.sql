@@ -17,9 +17,20 @@ CREATE PROCEDURE register_user(
     IN p_profile_pic_url VARCHAR(255), IN p_background_color_hex VARCHAR(7)
 )
 BEGIN
+	DECLARE v_new_user_id INT;
+    
+    -- 1. Create the User Account
     INSERT INTO users (email, password_hash, last_name, first_name, phone_number, vga_number, shirt_size, bio, profile_pic_url, background_color_hex)
     VALUES (p_email, p_password_hash, p_last_name, p_first_name, p_phone, p_vga_number, p_shirt_size, p_bio, IFNULL(p_profile_pic_url, 'https://images.unsplash.com/photo-1633332755192-727a05c4013d?w=400'), IFNULL(p_background_color_hex, '#64748b'));
-    SELECT * FROM users WHERE user_id = LAST_INSERT_ID();
+    
+    SET v_new_user_id = LAST_INSERT_ID();
+
+    -- 2. Add to Membership Request Queue (Default status is 'PENDING')
+    INSERT INTO membership_requests (user_id, status) 
+    VALUES (v_new_user_id, 'PENDING');
+
+    -- 3. Return the new user profile (Standard behavior for the frontend)
+    SELECT * FROM users WHERE user_id = v_new_user_id;
 END //
 
 DROP PROCEDURE IF EXISTS get_user_full_profile //
@@ -105,8 +116,11 @@ BEGIN
     SELECT DISTINCT t.*, CONCAT(u.first_name, ' ', u.last_name) as creator_name, tp.status as my_status
     FROM tournaments t
     JOIN users u ON t.creator_id = u.user_id
-    JOIN tournament_participants tp ON t.tournament_id = tp.tournament_id
-    WHERE tp.user_id = p_user_id;
+    -- Use LEFT JOIN to check if the specific user is a participant
+    LEFT JOIN tournament_participants tp ON t.tournament_id = tp.tournament_id AND tp.user_id = p_user_id
+    -- Filter: Keep if User is the Creator OR User is found in participants
+    WHERE t.creator_id = p_user_id OR tp.user_id IS NOT NULL
+    ORDER BY t.start_date DESC;
 END //
 
 DROP PROCEDURE IF EXISTS get_tournament_details //
@@ -120,7 +134,7 @@ END //
 DROP PROCEDURE IF EXISTS get_tournament_participants //
 CREATE PROCEDURE get_tournament_participants(IN p_tournament_id INT)
 BEGIN
-    SELECT u.user_id, u.first_name, u.last_name, u.profile_pic_url, u.vga_number, tp.status, tp.created_at as registered_at
+    SELECT u.user_id, u.first_name, u.last_name, u.profile_pic_url, u.background_color_hex, u.bio, u.email, tp.status, tp.created_at as registered_at
     FROM tournament_participants tp JOIN users u ON tp.user_id = u.user_id
     WHERE tp.tournament_id = p_tournament_id
     ORDER BY FIELD(tp.status, 'PENDING', 'APPROVED', 'REJECTED'), tp.created_at DESC;
@@ -130,11 +144,29 @@ DROP PROCEDURE IF EXISTS apply_for_tournament //
 CREATE PROCEDURE apply_for_tournament(IN p_tournament_id INT, IN p_user_id INT)
 BEGIN
     DECLARE v_status VARCHAR(20);
+    DECLARE v_is_eligible BOOLEAN DEFAULT FALSE;
+    
+    -- 1. Check Tournament Status
     SELECT status INTO v_status FROM tournaments WHERE tournament_id = p_tournament_id;
     
-    IF v_status != 'UPCOMING' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Tournament closed.'; END IF;
+    IF v_status != 'UPCOMING' THEN 
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Tournament is closed or not upcoming.'; 
+    END IF;
     
-    INSERT INTO tournament_participants (tournament_id, user_id, status) VALUES (p_tournament_id, p_user_id, 'PENDING');
+    -- 2. Check Eligibility (Must be in 'members' OR 'admins' table)
+    IF EXISTS (SELECT 1 FROM members WHERE member_id = p_user_id) OR 
+       EXISTS (SELECT 1 FROM admins WHERE admin_id = p_user_id) THEN
+        SET v_is_eligible = TRUE;
+    END IF;
+
+    -- 3. Throw Error if not eligible
+    IF v_is_eligible = FALSE THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Access Denied: Only Members or Admins can participate in tournaments.';
+    END IF;
+    
+    -- 4. Proceed with Registration
+    INSERT INTO tournament_participants (tournament_id, user_id, status) 
+    VALUES (p_tournament_id, p_user_id, 'PENDING');
 END //
 
 DROP PROCEDURE IF EXISTS manage_tournament_application //
@@ -162,6 +194,60 @@ CREATE PROCEDURE get_notifications_view()
 BEGIN
     SELECT n.*, CONCAT(u.first_name, ' ', u.last_name) as author_name 
     FROM notifications n JOIN users u ON n.author_id = u.user_id ORDER BY n.created_at DESC;
+END //
+
+-- ----------------------------------------------------------
+-- D. MEMBERSHIP MANAGEMENT (NEW)
+-- ----------------------------------------------------------
+
+DROP PROCEDURE IF EXISTS get_pending_membership_requests //
+CREATE PROCEDURE get_pending_membership_requests()
+BEGIN
+    SELECT 
+        mr.request_id,
+        mr.user_id,
+        mr.status,
+        mr.created_at as registered_at,
+        u.first_name,
+        u.last_name,
+        u.email,
+        u.profile_pic_url,
+        u.vga_number,
+        u.background_color_hex,
+        u.shirt_size
+    FROM membership_requests mr
+    JOIN users u ON mr.user_id = u.user_id
+    WHERE mr.status = 'PENDING'
+    ORDER BY mr.created_at ASC;
+END //
+
+DROP PROCEDURE IF EXISTS process_membership_request //
+CREATE PROCEDURE process_membership_request(
+    IN p_admin_id INT,
+    IN p_request_id INT,
+    IN p_status ENUM('APPROVED', 'REJECTED'),
+    IN p_comment TEXT
+)
+BEGIN
+    DECLARE v_user_id INT;
+    
+    -- 1. Get the user_id associated with this request
+    SELECT user_id INTO v_user_id FROM membership_requests WHERE request_id = p_request_id;
+    
+    -- 2. Update the request status
+    UPDATE membership_requests 
+    SET status = p_status, 
+        processed_by = p_admin_id, 
+        admin_comment = p_comment 
+    WHERE request_id = p_request_id;
+    
+    -- 3. If Approved, insert into members table (Promote from Guest)
+    IF p_status = 'APPROVED' THEN
+        INSERT IGNORE INTO members (member_id) VALUES (v_user_id);
+    END IF;
+    
+    -- 4. Return the updated user ID for confirmation
+    SELECT v_user_id as processed_user_id;
 END //
 
 DELIMITER ;
