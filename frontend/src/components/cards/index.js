@@ -5,3 +5,4 @@ export { default as CardNotification } from './CardNotification';
 export { default as CardProfile } from './CardProfile';
 export { default as CardTournament } from './CardTournament';
 export { default as CardUser } from './CardUser';
+export { default as CardRequest } from './CardRequest';

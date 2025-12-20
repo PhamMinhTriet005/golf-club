@@ -40,7 +40,7 @@ const Navbar = () => {
             <ul className='flex items-center gap-8'>
               <li><NavLink to='/home' className={getLinkClass}><Home size={18} /><span>Home</span></NavLink></li>
               <li><NavLink to='/directory' className={getLinkClass}><Compass size={18} /><span>Directory</span></NavLink></li>
-              <li><NavLink to='/dashboard' className={getLinkClass}><LayoutDashboard size={18} /><span>Info Center</span></NavLink></li>
+              <li><NavLink to='/info-center' className={getLinkClass}><LayoutDashboard size={18} /><span>Info Center</span></NavLink></li>
               <li><NavLink to='/tournaments' className={getLinkClass}><Trophy size={18} /><span>Tournaments</span></NavLink></li>
             </ul>
           </div>

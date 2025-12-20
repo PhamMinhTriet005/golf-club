@@ -32,7 +32,7 @@ const CreateContent = () => {
         docType: formData.docType
       }, token);
 
-      navigate('/dashboard');
+      navigate('/info-center');
     } catch (err) { setError(err.message); } 
     finally { setIsLoading(false); }
   };

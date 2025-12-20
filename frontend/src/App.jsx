@@ -5,10 +5,12 @@ import './App.css';
 import { AuthProvider, useAuth } from '@/context';
 import { Navbar, Footer, Background, Loading } from '@/components';
 import {
-  Home, Login, Register, Page404,
-  Directory, Profile, InfoCenter,
-  Tournaments, TournamentDetail,
-  CreateTournament, CreateContent
+  Home, Login, Register, Page404, Profile,
+  Tournaments, 
+  TournamentLayout, TournamentOverview, TournamentRoster, TournamentRequests,
+  CreateTournament, CreateContent,
+  DirectoryLayout, DirectoryMembers, DirectoryEvents,
+  InfoLayout, InfoDocuments, InfoNotifications
 } from '@/pages';
 
 /**
@@ -48,15 +50,23 @@ const MainLayout = () => {
             {/* --- Protected Domain Routes --- */}
             <Route path='/directory' element={
               <ProtectedRoute>
-                <Directory />
+                <DirectoryLayout />
               </ProtectedRoute>
-            } />
-            
-            <Route path='/dashboard' element={
+            }>
+              <Route index element={<DirectoryMembers />} />
+              <Route path='members' element={<Navigate to="." replace />} />
+              <Route path='events' element={<DirectoryEvents />} />
+            </Route>
+
+            <Route path='/info-center' element={
               <ProtectedRoute>
-                <InfoCenter />
+                <InfoLayout />
               </ProtectedRoute>
-            } />
+            }>
+              <Route index element={<InfoDocuments />} />
+              <Route path='documents' element={<Navigate to="." replace />} />
+              <Route path='notifications' element={<InfoNotifications />} />
+            </Route>
 
             {/* Tournament Routes */}
             <Route path='/tournaments' element={
@@ -67,9 +77,15 @@ const MainLayout = () => {
             
             <Route path='/tournament/:id' element={
               <ProtectedRoute>
-                <TournamentDetail />
+                <TournamentLayout />
               </ProtectedRoute>
-            } />
+            }>
+              {/* Index route renders the Overview by default */}
+              <Route index element={<TournamentOverview />} />
+              <Route path='overview' element={<Navigate to="." replace />} /> {/* Redirect duplicate path */}
+              <Route path='roster' element={<TournamentRoster />} />
+              <Route path='requests' element={<TournamentRequests />} />
+            </Route>
 
             {/* --- Admin Actions --- */}
             <Route path="/create-tournament" element={
